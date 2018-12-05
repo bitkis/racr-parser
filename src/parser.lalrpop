@@ -1,0 +1,113 @@
+use std::str::FromStr;
+use racr;
+use std::ops::Range;
+
+grammar;
+
+pub Access: racr::Access = {
+    "ReadOnly" => racr::Access::ReadOnly,
+    "WriteOnly" => racr::Access::WriteOnly,
+    "ReadWrite" => racr::Access::ReadWrite,
+};
+
+Offset: usize = {
+    r"0x[[:xdigit:]]*" => usize::from_str_radix(<>.to_string().get(2..).unwrap(), 16).unwrap(),
+    r"[[:digit:]]*" => usize::from_str(<>).unwrap(),
+}
+
+Size: usize = {
+    r"[[:digit:]]*" => usize::from_str(<>).unwrap(),
+}
+
+ResetValue: u128 = {
+    r"0x[[:xdigit:]]*" => u128::from_str_radix(<>.to_string().get(2..).unwrap(), 16).unwrap(),
+    r"[[:digit:]]*" => u128::from_str(<>).unwrap(),
+}
+
+String: String = r##""[^"]*""##  => {let mut s = String::from(<>); s.pop(); s.remove(0); s};
+Ident: racr::Ident = r"[[:alpha:]][[:alnum:]]*" => <>.into();
+
+Description: String = "#[" "doc" "=" <String> "]" => <>;
+
+pub Path: racr::Path = {
+    <head: Ident> <tail: ("::" <Ident>)*> => {let mut segments = vec![head]; segments.append(&mut tail.clone()); racr::Path{segments}},
+}
+
+pub Module: racr::Module = {
+    "mod" <Ident> ";" => racr::Module{ident: <>, content: None},
+    "mod" <ident: Ident> "{" <content: Content> "}" => racr::Module{ident: ident, content: Some(content)},
+}
+
+pub Item: racr::Item = {
+    Use => racr::Item::Use(<>),
+    Module => racr::Item::Mod(<>),
+    DeviceDefinition => racr::Item::Device(<>),
+    PeripheralDefinition => racr::Item::Peripheral(<>),
+    RegisterDefinition => racr::Item::Register(<>),
+}
+
+pub Content: Vec<racr::Item> = Item* => <>;
+
+UseName: racr::UseTree = Ident => racr::UseTree::Ident(<>);
+UsePath: racr::UseTree = <path_segment: Ident> "::" <sub_tree: UseTree> => racr::UseTree::Path{path_segment, sub_tree: Box::new(sub_tree)};
+
+UseTree: racr::UseTree = {
+    UsePath => <>,
+    UseName => <>,
+}
+
+pub Use: racr::Use = "use " <UseTree> ";" => racr::Use{tree: <>};
+
+BitRange: Range<usize> = {
+    "[" <start: Offset> ".." <end: Offset> "]" => start..end,
+    "[" <Offset> "]" => <>..<>,
+}
+
+BitSize: usize = "[" <Offset> "]" => <>;
+
+FieldInstance: racr::FieldInstance = {
+    <description: Description?> <access: Access?> <ident: Ident> <bit:BitRange> => racr::FieldInstance { ident, description, bit_start: bit.start, bit_end: bit.end, access },
+}
+
+pub RegisterDefinition: racr::RegisterDefinition = {
+    <description: Description?> 
+    <access: Access> "register" <size: BitSize> <ident: Ident> <reset_value: ("=" <ResetValue>)?> "{" 
+        <fields: (<FieldInstance> ",")*> 
+    "}" 
+    => racr::RegisterDefinition{<>}
+}
+
+RegisterType: racr::RegisterType = {
+    <path: Path> => racr::RegisterType::Single{<>},
+    "[" <path: Path> ";" <size: Size> "]" => racr::RegisterType::Array{<>},
+}
+
+RegisterInstance: racr::RegisterInstance = {
+    <ident: Ident> ":" <ty: RegisterType> => racr::RegisterInstance{<>}
+}
+
+RegisterSlot: racr::RegisterSlot = {
+    <instance: RegisterInstance> "@" <offset: Offset> => racr::RegisterSlot::Single{<>},
+    "(" <instance: RegisterInstance> ")" "@" <offset: Offset>  => racr::RegisterSlot::Single{<>},
+    "(" <instance_head: RegisterInstance> <instance_tail: ("|" <RegisterInstance>)+> ")" "@" <offset: Offset> => {let mut alternatives = vec![instance_head]; alternatives.append(&mut instance_tail.clone()); racr::RegisterSlot::Overloaded{alternatives, offset}},
+}
+
+pub PeripheralDefinition: racr::PeripheralDefinition = {
+    <description: Description?>
+    "peripheral" <ident: Ident> "{"
+        <registers: (<RegisterSlot> ",")*>
+    "}"
+    => racr::PeripheralDefinition{<>}
+}
+
+PeripheralInstance: racr::PeripheralInstance = {
+    <ident: Ident> ":" <path: Path> "@" <address: Offset> => racr::PeripheralInstance{<>}
+}
+
+pub DeviceDefinition: racr::DeviceDefinition = {
+    <description: Description?>
+    "device" <ident: Ident> "{"
+        <peripherals: (<PeripheralInstance> ",")*>
+    "}"
+    => racr::DeviceDefinition{<>}
+}
