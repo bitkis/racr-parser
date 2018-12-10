@@ -4,6 +4,30 @@ use std::ops::Range;
 
 grammar;
 
+// Comma seperated list allowing trailing comma
+Comma<T>: Vec<T> = { // (1)
+    <v:(<T> ",")*> <e:T?> => match e { // (2)
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+};
+
+// Bar seperated list allowing trailing bar
+Bar<T>: Vec<T> = { // (1)
+    <v:(<T> "|")*> <e:T?> => match e { // (2)
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+};
+
 pub Access: racr::Access = {
     "ReadOnly" => racr::Access::ReadOnly,
     "WriteOnly" => racr::Access::WriteOnly,
@@ -19,15 +43,16 @@ Size: usize = {
     r"[[:digit:]]*" => usize::from_str(<>).unwrap(),
 }
 
-ResetValue: u128 = {
+BitValue: u128 = {
     r"0x[[:xdigit:]]*" => u128::from_str_radix(<>.to_string().get(2..).unwrap(), 16).unwrap(),
+    r"0b[[:xdigit:]]*" => u128::from_str_radix(<>.to_string().get(2..).unwrap(), 2).unwrap(),
     r"[[:digit:]]*" => u128::from_str(<>).unwrap(),
 }
 
 String: String = r##""[^"]*""##  => {let mut s = String::from(<>); s.pop(); s.remove(0); s};
 Ident: racr::Ident = r"[[:alpha:]][[:alnum:]]*" => <>.into();
 
-Description: String = "#[" "doc" "=" <String> "]" => <>;
+Documentation: String = "#[" "doc" "=" <String> "]" => <>;
 
 pub Path: racr::Path = {
     <head: Ident> <tail: ("::" <Ident>)*> => {let mut segments = vec![head]; segments.append(&mut tail.clone()); racr::Path{segments}},
@@ -50,29 +75,38 @@ pub Content: Vec<racr::Item> = Item* => <>;
 
 UseName: racr::UseTree = Ident => racr::UseTree::Ident(<>);
 UsePath: racr::UseTree = <path_segment: Ident> "::" <sub_tree: UseTree> => racr::UseTree::Path{path_segment, sub_tree: Box::new(sub_tree)};
+UseRename: racr::UseTree = <ident: Ident> "as" <rename: Ident> => racr::UseTree::Rename{<>};
 
 UseTree: racr::UseTree = {
     UsePath => <>,
     UseName => <>,
+    UseRename => <>,
 }
 
 pub Use: racr::Use = "use " <UseTree> ";" => racr::Use{tree: <>};
 
 BitRange: Range<usize> = {
     "[" <start: Offset> ".." <end: Offset> "]" => start..end,
-    "[" <Offset> "]" => <>..<>,
+    "[" <Offset> "]" => <>..(<>+1),
 }
 
 BitSize: usize = "[" <Offset> "]" => <>;
 
+FieldVariant: racr::FieldVariant = {
+    <documentation: Documentation?>
+    <ident: Ident> "=" <value: BitValue>
+    => racr::FieldVariant{<>}
+}
+
 FieldInstance: racr::FieldInstance = {
-    <description: Description?> <access: Access?> <ident: Ident> <bit:BitRange> => racr::FieldInstance { ident, description, bit_start: bit.start, bit_end: bit.end, access },
+    <documentation: Documentation?> <access: Access?> <ident: Ident> <bit_range: BitRange> => racr::FieldInstance { <>, variants: Vec::new() },
+    <documentation: Documentation?> <access: Access?> <ident: Ident> <bit_range: BitRange> "{" <variants: Comma<FieldVariant>> "}" => racr::FieldInstance { <> },
 }
 
 pub RegisterDefinition: racr::RegisterDefinition = {
-    <description: Description?> 
-    <access: Access> "register" <size: BitSize> <ident: Ident> <reset_value: ("=" <ResetValue>)?> "{" 
-        <fields: (<FieldInstance> ",")*> 
+    <documentation: Documentation?> 
+    <access: Access> "register" <size: BitSize> <ident: Ident> <reset_value: ("=" <BitValue>)?> "{" 
+        <fields: Comma<FieldInstance>> 
     "}" 
     => racr::RegisterDefinition{<>}
 }
@@ -88,14 +122,19 @@ RegisterInstance: racr::RegisterInstance = {
 
 RegisterSlot: racr::RegisterSlot = {
     <instance: RegisterInstance> "@" <offset: Offset> => racr::RegisterSlot::Single{<>},
-    "(" <instance: RegisterInstance> ")" "@" <offset: Offset>  => racr::RegisterSlot::Single{<>},
-    "(" <instance_head: RegisterInstance> <instance_tail: ("|" <RegisterInstance>)+> ")" "@" <offset: Offset> => {let mut alternatives = vec![instance_head]; alternatives.append(&mut instance_tail.clone()); racr::RegisterSlot::Overloaded{alternatives, offset}},
+    "(" <alternatives: Bar<RegisterInstance>> ")" "@" <offset: Offset> => {
+        if alternatives.len() == 1 {
+            racr::RegisterSlot::Single{instance: alternatives[0].clone(), offset}
+        } else {
+            racr::RegisterSlot::Overloaded{<>}
+        }
+    }
 }
 
 pub PeripheralDefinition: racr::PeripheralDefinition = {
-    <description: Description?>
+    <documentation: Documentation?>
     "peripheral" <ident: Ident> "{"
-        <registers: (<RegisterSlot> ",")*>
+        <registers: Comma<RegisterSlot>>
     "}"
     => racr::PeripheralDefinition{<>}
 }
@@ -105,9 +144,9 @@ PeripheralInstance: racr::PeripheralInstance = {
 }
 
 pub DeviceDefinition: racr::DeviceDefinition = {
-    <description: Description?>
+    <documentation: Documentation?>
     "device" <ident: Ident> "{"
-        <peripherals: (<PeripheralInstance> ",")*>
+        <peripherals: Comma<PeripheralInstance>>
     "}"
     => racr::DeviceDefinition{<>}
 }
