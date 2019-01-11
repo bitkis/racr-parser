@@ -5,19 +5,25 @@
 //! ```
 //! assert_eq!(
 //!     racr::Access::ReadOnly,
-//!     racr_parser::AccessParser::new().parse("ReadOnly").unwrap()
+//!     racr_parser::AccessParser::new().parse("ro").unwrap()
 //! );
 //! ```
 //! ```
 //! assert_eq!(
 //!     racr::Access::WriteOnly,
-//!     racr_parser::AccessParser::new().parse("WriteOnly").unwrap()
+//!     racr_parser::AccessParser::new().parse("wo").unwrap()
 //! );
 //! ```
 //! ```
 //! assert_eq!(
 //!     racr::Access::ReadWrite,
-//!     racr_parser::AccessParser::new().parse("ReadWrite").unwrap()
+//!     racr_parser::AccessParser::new().parse("rw").unwrap()
+//! );
+//! ```
+//! ```
+//! assert_eq!(
+//!     racr::Access::ReadAsWrite,
+//!     racr_parser::AccessParser::new().parse("raw").unwrap()
 //! );
 //! ```
 //! 
@@ -81,29 +87,34 @@
 //!         size: 32,
 //!         reset_value: Some(0x00),
 //!         fields: vec![
-//!             racr::FieldInstance{ident: "bar".into(), documentation: None, bit_range: 0..4, access: None, variants: Vec::new()},
-//!             racr::FieldInstance{ident: "barX".into(), documentation: None, bit_range: 4..8, access: None, variants: vec![
+//!             racr::FieldInstance{ty: racr::FieldType::Field{ident: "bar".into()}, documentation: None, bit_range: 0..4, access: None},
+//!             racr::FieldInstance{documentation: None, bit_range: 4..8, access: None, ty: racr::FieldType::Enum{ident: "barX".into(), variants: vec![
 //!                 racr::FieldVariant{ident: "BarA".into(), value: 0, documentation: None},
 //!                 racr::FieldVariant{ident: "BarB".into(), value: 2, documentation: Some(String::from("some documentation"))},
 //!                 racr::FieldVariant{ident: "BarC".into(), value: 4, documentation: None},
-//!             ]},
-//!             racr::FieldInstance{ident: "baz".into(), documentation: None, bit_range: 8..9, access: Some(racr::Access::ReadOnly), variants: Vec::new()},
-//!             racr::FieldInstance{ident: "bax".into(), documentation: Some(String::from("Some documentation")), bit_range: 9..32, access: None, variants: Vec::new()},
+//!             ]}},
+//!             racr::FieldInstance{ty: racr::FieldType::Field{ident: "baz".into()}, documentation: None, bit_range: 8..9, access: Some(racr::Access::ReadOnly)},
+//!             racr::FieldInstance{ty: racr::FieldType::Reserved{value: 0}, documentation: Some(String::from("Some documentation")), bit_range: 9..10, access: None},
+//!             racr::FieldInstance{ty: racr::FieldType::Reserved{value: 2}, documentation: None, bit_range: 10..12, access: None},
+//!             racr::FieldInstance{ty: racr::FieldType::Field{ident: "bax".into()}, documentation: Some(String::from("Some documentation")), bit_range: 12..32, access: None},
 //!         ],
 //!     },
 //!     racr_parser::RegisterDefinitionParser::new().parse(" 
 //! #[doc = \"Some documentation\"]
-//! WriteOnly register[32] Foo = 0 {
-//!     bar[0..4],
-//!     barX[4..8] {
+//! wo register[32] Foo = 0 {
+//!     field[0..4] bar,
+//!     enum[4..8] barX {
 //!         BarA = 0,
 //!         #[doc = \"some documentation\"]
 //!         BarB = 0b10,
 //!         BarC = 0x4,
 //!     },
-//!     ReadOnly baz[8],
+//!     ro field[8] baz,
 //!     #[doc = \"Some documentation\"]
-//!     bax[9..32],
+//!     reserved[9] = 0,
+//!     reserved[10..12] = 2,
+//!     #[doc = \"Some documentation\"]
+//!     field[12..32] bax,
 //! }"
 //!     ).unwrap()
 //! );
@@ -117,7 +128,7 @@
 //!         registers: vec![
 //!             racr::RegisterSlot::Single{instance: racr::RegisterInstance{ident: "bar".into(), ty: racr::RegisterType::Single{path: racr_parser::PathParser::new().parse("bar::Bar").unwrap()}}, offset: 0x0},
 //!             racr::RegisterSlot::Single{instance: racr::RegisterInstance{ident: "bax".into(), ty: racr::RegisterType::Array{path: racr_parser::PathParser::new().parse("bax::Bax").unwrap(), size: 2}}, offset: 0x4},
-//!             racr::RegisterSlot::Overloaded{
+//!             racr::RegisterSlot::Union{
 //!                 alternatives: vec![
 //!                     racr::RegisterInstance{ident: "baz1".into(), ty: racr::RegisterType::Single{path: racr_parser::PathParser::new().parse("baz::Baz1").unwrap()}},
 //!                     racr::RegisterInstance{ident: "baz2".into(), ty: racr::RegisterType::Single{path: racr_parser::PathParser::new().parse("baz::Baz2").unwrap()}},

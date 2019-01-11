@@ -10,4 +10,4 @@ lalrpop = "0.16.2"
 [dependencies]
 lalrpop-util = "0.16.2"
 regex = "1.1"
-racr = {git = "https://github.com/racr-rust/racr-rust.git", rev = "1f8df4bb8685e874bdfbd661c18badd20804b3e7"}
+racr = {git = "https://github.com/racr-rust/racr-rust.git", rev = "df008cef8f77d59b16085a1b8fce7fe7bae4e21b"}

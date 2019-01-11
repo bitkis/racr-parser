@@ -29,9 +29,10 @@ Bar<T>: Vec<T> = { // (1)
 };
 
 pub Access: racr::Access = {
-    "ReadOnly" => racr::Access::ReadOnly,
-    "WriteOnly" => racr::Access::WriteOnly,
-    "ReadWrite" => racr::Access::ReadWrite,
+    "ro" => racr::Access::ReadOnly,
+    "wo" => racr::Access::WriteOnly,
+    "rw" => racr::Access::ReadWrite,
+    "raw" => racr::Access::ReadAsWrite,
 };
 
 Offset: usize = {
@@ -43,7 +44,7 @@ Size: usize = {
     r"[[:digit:]]*" => usize::from_str(<>).unwrap(),
 }
 
-BitValue: u128 = {
+Value: u128 = {
     r"0x[[:xdigit:]]*" => u128::from_str_radix(<>.to_string().get(2..).unwrap(), 16).unwrap(),
     r"0b[[:xdigit:]]*" => u128::from_str_radix(<>.to_string().get(2..).unwrap(), 2).unwrap(),
     r"[[:digit:]]*" => u128::from_str(<>).unwrap(),
@@ -94,18 +95,20 @@ BitSize: usize = "[" <Offset> "]" => <>;
 
 FieldVariant: racr::FieldVariant = {
     <documentation: Documentation?>
-    <ident: Ident> "=" <value: BitValue>
+    <ident: Ident> "=" <value: Value>
     => racr::FieldVariant{<>}
 }
 
 FieldInstance: racr::FieldInstance = {
-    <documentation: Documentation?> <access: Access?> <ident: Ident> <bit_range: BitRange> => racr::FieldInstance { <>, variants: Vec::new() },
-    <documentation: Documentation?> <access: Access?> <ident: Ident> <bit_range: BitRange> "{" <variants: Comma<FieldVariant>> "}" => racr::FieldInstance { <> },
+    <documentation: Documentation?> <access: Access?> "field" <bit_range: BitRange> <ident: Ident> => racr::FieldInstance{documentation, bit_range, access, ty: racr::FieldType::Field{ident}},
+    <documentation: Documentation?> <access: Access?> "reserved" <bit_range: BitRange> "=" <value: Value> => racr::FieldInstance{documentation, bit_range, access, ty: racr::FieldType::Reserved{value}},
+    <documentation: Documentation?> <access: Access?> "enum" <bit_range: BitRange> <ident: Ident>
+        "{" <variants: Comma<FieldVariant>> "}" => racr::FieldInstance{documentation, bit_range, access, ty: racr::FieldType::Enum{ident, variants}},
 }
 
 pub RegisterDefinition: racr::RegisterDefinition = {
     <documentation: Documentation?> 
-    <access: Access> "register" <size: BitSize> <ident: Ident> <reset_value: ("=" <BitValue>)?> "{" 
+    <access: Access> "register" <size: BitSize> <ident: Ident> <reset_value: ("=" <Value>)?> "{"
         <fields: Comma<FieldInstance>> 
     "}" 
     => racr::RegisterDefinition{<>}
@@ -126,7 +129,7 @@ RegisterSlot: racr::RegisterSlot = {
         if alternatives.len() == 1 {
             racr::RegisterSlot::Single{instance: alternatives[0].clone(), offset}
         } else {
-            racr::RegisterSlot::Overloaded{<>}
+            racr::RegisterSlot::Union{<>}
         }
     }
 }
