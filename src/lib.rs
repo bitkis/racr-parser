@@ -188,8 +188,6 @@
 use lalrpop_util;
 use lalrpop_util::lalrpop_mod;
 
-use racr;
-
 lalrpop_mod!(parser);
 
 pub use crate::parser::ModuleParser;
